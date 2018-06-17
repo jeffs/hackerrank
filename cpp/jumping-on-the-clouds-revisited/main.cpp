@@ -1,3 +1,7 @@
+#ifndef __cpp_structured_bindings
+#pragma GCC diagnostic warning "-std=c++17"
+#endif
+
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -18,26 +22,48 @@ int read_int() {
     return result;
 }
 
-struct sum_with_carry { std::uint32_t sum, carry; };
+struct add_result { uint32_t s, c; }; // sum, carry
 
-sum_with_carry add(uint32_t const first, uint32_t const second) {
-    uint64_t const sum = static_cast<uint64_t>(first) + second;
+constexpr add_result half_add(uint32_t const a, uint32_t const b) {
+    uint64_t const sum = static_cast<uint64_t>(a) + b;
     return {
         static_cast<uint32_t>(sum & 0xFFFFFFFF),
-        static_cast<uint32_t>(sum >> 32),
+        static_cast<uint32_t>(sum >> 32)
     };
 }
 
-struct big_int {
+constexpr add_result add(
+        uint32_t const a,
+        uint32_t const b,
+        uint32_t const c) {
+    auto const [s1,    c1] = half_add(a,  b);
+    auto const [s,     c2] = half_add(s1, c);
+    auto const [c_out, c3] = half_add(c1, c2); assert(c3 == 0);
+    return { s, c_out };
+}
+
+class big_int {
     std::vector<int> _chunks;
+  public:
 
     big_int(int const value): _chunks{value} { }
 
+    big_int& operator+(big_int const& other) {
+        if (_chunks.empty()) {
+            _chunks = other._chunks;
+        } else if (other._chunks.empty()) {
+            // no change
+        } else {
+            // TODO
+        }
+        return *this;
+    }
+
 };
 
-void test_add() {
+constexpr void test_half_add() {
     constexpr uint32_t m = std::numeric_limits<uint32_t>::max();
-    constexpr struct { uint32_t u1, u2, sum, carry; } data[] = {
+    constexpr struct { uint32_t a, b, s, c; } data[] = {
         { 0, 0, 0, 0 },
         { 0, 1, 1, 0 },
         { 1, 0, 1, 0 },
@@ -46,13 +72,43 @@ void test_add() {
         { m, m, m - 1, 1 },
     };
     for (auto const row : data) {
-        auto const result = add(row.u1, row.u2);
-        assert(result.sum == row.sum);
-        assert(result.carry == row.carry);
+        auto const [s, c] = half_add(row.a, row.b);
+        assert(s == row.s);
+        assert(c == row.c);
+    }
+}
+
+constexpr void test_add() {
+    constexpr uint32_t m = std::numeric_limits<uint32_t>::max();
+    constexpr struct { uint32_t a, b, c_in, s, c_out; } data[] = {
+        { 0, 0, 0, 0, 0 },          // c_in == 0
+        { 0, 1, 0, 1, 0 },
+        { 1, 0, 0, 1, 0 },
+        { 0, m, 0, m, 0 },
+        { m, 0, 0, m, 0 },
+        { m, m, 0, m - 1, 1 },
+        { 0, 0, 1, 1, 0 },          // c_in == 1
+        { 0, 1, 1, 2, 0 },
+        { 1, 0, 1, 2, 0 },
+        { 0, m, 1, 0, 1 },
+        { m, 0, 1, 0, 1 },
+        { m, m, 1, m, 1 },
+        { 0, 0, m, m, 0 },          // c_in == m
+        { 0, 1, m, 0, 1 },
+        { 1, 0, m, 0, 1 },
+        { 0, m, m, m - 1, 1 },
+        { m, 0, m, m - 1, 1 },
+        { m, m, m, m - 2, 2 },
+    };
+    for (auto const row : data) {
+        auto const [s, c] = add(row.a, row.b, row.c_in);
+        assert(s == row.s);
+        assert(c == row.c_out);
     }
 }
 
 int main() {
-
+    test_half_add();
     test_add();
+    std::puts("15511210043330985984000000");
 }
